@@ -17,6 +17,7 @@
  ******************************************************************************/
 package io.github.dsheirer.dsp.fm;
 
+import io.github.dsheirer.dsp.squelch.PowerSquelch;
 import io.github.dsheirer.sample.buffer.ReusableBufferQueue;
 import io.github.dsheirer.sample.buffer.ReusableComplexBuffer;
 import io.github.dsheirer.sample.buffer.ReusableFloatBuffer;
@@ -31,23 +32,24 @@ public class FMDemodulator
     private ReusableBufferQueue mReusableBufferQueue = new ReusableBufferQueue("FMDemodulator");
     private float mPreviousI = 0.0f;
     private float mPreviousQ = 0.0f;
-    protected float mGain;
+    protected float mGain = 1.0f;
+    private PowerSquelch mPowerSquelch;
 
     /**
      * Creates an FM demodulator instance with a default gain of 1.0.
      */
-    public FMDemodulator()
+    public FMDemodulator(double alpha, double threshold, int ramp)
     {
-        this(1.0f);
+        mPowerSquelch = new PowerSquelch(alpha, threshold, ramp);
     }
 
     /**
-     * Creates an FM demodulator instance and applies the gain value to each demodulated output sample.
-     * @param gain to apply to demodulated samples.
+     * Sets the squelching threshold value
+     * @param threshold value in decibels (dB)
      */
-    public FMDemodulator(float gain)
+    public void setSquelchThreshold(double threshold)
     {
-        mGain = gain;
+        mPowerSquelch.setThreshold(threshold);
     }
 
     /**
@@ -136,10 +138,23 @@ public class FMDemodulator
 
         float[] basebandSamples = basebandSampleBuffer.getSamples();
         float[] demodulatedSamples = demodulatedBuffer.getSamples();
+        float i,q;
 
         for(int x = 0; x < basebandSamples.length; x += 2)
         {
-            demodulatedSamples[x / 2] = demodulate(basebandSamples[x], basebandSamples[x + 1]);
+            i = basebandSamples[x];
+            q = basebandSamples[x + 1];
+
+            mPowerSquelch.process(i, q);
+
+            if(mPowerSquelch.isUnmuted() || mPowerSquelch.isDecay())
+            {
+                demodulatedSamples[x / 2] = demodulate(i, q);
+            }
+            else
+            {
+                demodulatedSamples[x / 2] = 0.0f;
+            }
         }
 
         basebandSampleBuffer.decrementUserCount();
@@ -167,5 +182,29 @@ public class FMDemodulator
     public void setGain(float gain)
     {
         mGain = gain;
+    }
+
+    /**
+     * Indicates if the squelch state has changed during the processing of buffer(s)
+     */
+    public boolean isSquelchChanged()
+    {
+        return mPowerSquelch.isSquelchChanged();
+    }
+
+    /**
+     * Sets or resets the squelch changed flag.
+     */
+    public void setSquelchChanged(boolean changed)
+    {
+        mPowerSquelch.setSquelchChanged(changed);
+    }
+
+    /**
+     * Indicates if the squelch state is currently muted
+     */
+    public boolean isMuted()
+    {
+        return mPowerSquelch.isMuted();
     }
 }

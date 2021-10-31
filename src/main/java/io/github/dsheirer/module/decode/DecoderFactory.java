@@ -69,6 +69,7 @@ import io.github.dsheirer.module.decode.mpt1327.MPT1327TrafficChannelManager;
 import io.github.dsheirer.module.decode.mpt1327.Sync;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.module.decode.nbfm.NBFMDecoder;
+import io.github.dsheirer.module.decode.nbfm.NBFMDecoderState;
 import io.github.dsheirer.module.decode.p25.P25TrafficChannelManager;
 import io.github.dsheirer.module.decode.p25.audio.P25P1AudioModule;
 import io.github.dsheirer.module.decode.p25.audio.P25P2AudioModule;
@@ -305,7 +306,7 @@ public class DecoderFactory
 
     private static void processNBFM(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
         modules.add(new NBFMDecoder(decodeConfig));
-        modules.add(new AlwaysUnsquelchedDecoderState(DecoderType.NBFM, channel.getName()));
+        modules.add(new NBFMDecoderState(channel.getName()));
         AudioModule audioModuleFM = new AudioModule(aliasList);
 
         //Check if the user wants all audio recorded ..

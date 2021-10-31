@@ -15,6 +15,9 @@
  ******************************************************************************/
 package io.github.dsheirer.module.demodulate.fm;
 
+import io.github.dsheirer.audio.squelch.ISquelchStateProvider;
+import io.github.dsheirer.audio.squelch.SquelchState;
+import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.dsp.filter.FilterFactory;
 import io.github.dsheirer.dsp.filter.Window;
 import io.github.dsheirer.dsp.filter.design.FilterDesignException;
@@ -39,17 +42,23 @@ import org.slf4j.LoggerFactory;
  * Note: no filtering is applied to the demodulated audio.
  */
 public class FMDemodulatorModule extends Module implements ISourceEventListener, IReusableComplexBufferListener,
-    Listener<ReusableComplexBuffer>, IReusableBufferProvider
+    Listener<ReusableComplexBuffer>, IReusableBufferProvider, ISquelchStateProvider
 {
     private final static Logger mLog = LoggerFactory.getLogger(FMDemodulatorModule.class);
+    private static final double POWER_SQUELCH_ALPHA_DECAY = 0.0001;
+    private static final double POWER_SQUELCH_THRESHOLD_DB = -78.0;
+    private static final int POWER_SQUELCH_RAMP = 4;
 
     private ComplexFIRFilter2 mIQFilter;
-    private FMDemodulator mDemodulator = new FMDemodulator();
+    private FMDemodulator mDemodulator = new FMDemodulator(POWER_SQUELCH_ALPHA_DECAY, POWER_SQUELCH_THRESHOLD_DB,
+            POWER_SQUELCH_RAMP);
     private RealResampler mResampler;
     private SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
     private Listener<ReusableFloatBuffer> mResampledReusableBufferListener;
     private double mChannelBandwidth;
     private double mOutputSampleRate;
+    private boolean mSquelch = false;
+    private Listener<SquelchStateEvent> mSquelchStateEventListener;
 
     /**
      * Creates an FM demodulator for the specified channel bandwidth and output sample rate.
@@ -119,11 +128,64 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
 
         if(mResampler != null)
         {
-            mResampler.resample(demodulatedBuffer);
+            //If we're currently squelched and the squelch state changed while demodulating the baseband samples,
+            // then un-squelch so we can send this buffer
+            if(mSquelch && mDemodulator.isSquelchChanged())
+            {
+                mSquelch = false;
+                broadcastSquelchState();
+            }
+
+            //Either send the demodulated buffer to the resampler for distro, or decrement the user count
+            if(mSquelch)
+            {
+                demodulatedBuffer.incrementUserCount();
+            }
+            else
+            {
+                mResampler.resample(demodulatedBuffer);
+            }
+
+            //Set to squelch if necessary to close out the audio buffers
+            if(!mSquelch && mDemodulator.isMuted())
+            {
+                mSquelch = true;
+                broadcastSquelchState();
+            }
         }
         else
         {
             demodulatedBuffer.decrementUserCount();
+        }
+    }
+
+    /**
+     * Registers the listener to receive squelch state change events
+     */
+    @Override
+    public void setSquelchStateListener(Listener<SquelchStateEvent> listener)
+    {
+        mSquelchStateEventListener = listener;
+    }
+
+    /**
+     * Removes the registered squelch state listener
+     */
+    @Override
+    public void removeSquelchStateListener()
+    {
+        mSquelchStateEventListener = null;
+    }
+
+    /**
+     * Broadcasts the current squelch state to the registered listener
+     */
+    private void broadcastSquelchState()
+    {
+        if(mSquelchStateEventListener != null)
+        {
+            mSquelchStateEventListener.receive(SquelchStateEvent
+                    .create(mSquelch ? SquelchState.SQUELCH : SquelchState.UNSQUELCH));
         }
     }
 
