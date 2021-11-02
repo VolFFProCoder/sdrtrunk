@@ -18,13 +18,9 @@
  */
 package io.github.dsheirer.module.decode.nbfm;
 
-import io.github.dsheirer.audio.squelch.ISquelchStateListener;
-import io.github.dsheirer.audio.squelch.SquelchState;
-import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.channel.state.DecoderState;
 import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.DecoderStateEvent.Event;
-import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.identifier.Form;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierClass;
@@ -32,19 +28,19 @@ import io.github.dsheirer.identifier.Role;
 import io.github.dsheirer.identifier.string.SimpleStringIdentifier;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.DecoderType;
-import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.module.decode.event.DecodeEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Narrow Band FM decoder channel state - provides the minimum channel state functionality
  */
-public class NBFMDecoderState extends DecoderState implements ISquelchStateListener
+public class NBFMDecoderState extends DecoderState
 {
     private final static Logger mLog = LoggerFactory.getLogger(NBFMDecoderState.class);
     private Identifier mChannelNameIdentifier;
     private String mChannelName;
-    private Listener<SquelchStateEvent> mSquelchStateEventListener = new SquelchStateListener();
+    private DecodeEvent mDecodeEvent;
 
     public NBFMDecoderState(String channelName)
     {
@@ -78,10 +74,49 @@ public class NBFMDecoderState extends DecoderState implements ISquelchStateListe
     @Override
     public void receiveDecoderStateEvent(DecoderStateEvent event)
     {
-        if(event.getEvent() == Event.REQUEST_RESET)
+        switch(event.getEvent())
         {
-            getIdentifierCollection().update(mChannelNameIdentifier);
+            case REQUEST_RESET ->
+                    {
+                        getIdentifierCollection().update(mChannelNameIdentifier);
+                    }
+            case START ->
+                    {
+                        createDecodeEvent();
+                        broadcast(mDecodeEvent);
+                    }
+            case END ->
+                    {
+                        if(mDecodeEvent == null)
+                        {
+                            createDecodeEvent();
+                        }
+
+                        mDecodeEvent.end(System.currentTimeMillis());
+                        broadcast(mDecodeEvent);
+                        mDecodeEvent = null;
+                    }
+            case CONTINUATION ->
+                    {
+                        if(mDecodeEvent == null)
+                        {
+                            createDecodeEvent();
+                        }
+
+                        mDecodeEvent.update(System.currentTimeMillis());
+                        broadcast(mDecodeEvent);
+                    }
         }
+    }
+
+    private void createDecodeEvent()
+    {
+        mDecodeEvent = DecodeEvent.builder(System.currentTimeMillis())
+                .eventDescription("CALL")
+                .details("NBFM")
+                .timeslot(0)
+                .identifiers(getIdentifierCollection())
+                .build();
     }
 
     @Override
@@ -99,33 +134,5 @@ public class NBFMDecoderState extends DecoderState implements ISquelchStateListe
     @Override
     public void stop()
     {
-    }
-
-    @Override
-    public Listener<SquelchStateEvent> getSquelchStateListener()
-    {
-        return mSquelchStateEventListener;
-    }
-
-    /**
-     * Wrapper class to process squelch state events and convert them to decoder events for start/stop calls.
-     */
-    private class SquelchStateListener implements Listener<SquelchStateEvent>
-    {
-        @Override
-        public void receive(SquelchStateEvent squelchStateEvent)
-        {
-            boolean squelched = squelchStateEvent.getSquelchState() == SquelchState.SQUELCH;
-
-            mLog.debug("Received and Processing: " + squelchStateEvent);
-            if(squelched)
-            {
-                broadcast(new DecoderStateEvent(this, Event.END, State.IDLE));
-            }
-            else
-            {
-                broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
-            }
-        }
     }
 }

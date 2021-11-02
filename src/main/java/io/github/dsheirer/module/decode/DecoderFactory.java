@@ -315,10 +315,10 @@ public class DecoderFactory
             audioModuleFM.setRecordAudio(true);
         }
         modules.add(audioModuleFM);
-        if(channel.getSourceConfiguration().getSourceType() == SourceType.TUNER)
-        {
-            modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH, DEMODULATED_AUDIO_SAMPLE_RATE));
-        }
+//        if(channel.getSourceConfiguration().getSourceType() == SourceType.TUNER)
+//        {
+//            modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH, DEMODULATED_AUDIO_SAMPLE_RATE));
+//        }
     }
 
     private static void processAM(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
